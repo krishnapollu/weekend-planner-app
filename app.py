@@ -4,6 +4,7 @@ Compact, professional chat-style interface with real-time agent pipeline updates
 """
 
 import streamlit as st
+import streamlit.components.v1 as components
 import os
 import ssl
 from dotenv import load_dotenv
@@ -12,6 +13,7 @@ from io import StringIO
 import sys
 import time
 import httpx
+import threading
 
 # Load environment variables FIRST
 load_dotenv()
@@ -62,7 +64,7 @@ html, body, [data-testid="stAppViewContainer"], .main {
 
 /* Hide Streamlit default elements */
 .block-container {
-    padding: 1rem !important;
+    padding: 0.5rem 1rem !important;
     max-width: 100% !important;
 }
 section[data-testid="stSidebar"] {
@@ -86,24 +88,24 @@ footer {
     max-width: 100% !important;
 }
 
-/* Header Area - Top Left, Light color */
+/* Header Area - Centered, Light color - COMPACT */
 .app-header {
-    text-align: left;
-    padding: 1rem 0;
-    margin-bottom: 1rem;
+    text-align: center;
+    padding: 0.5rem 0;
+    margin-bottom: 0.5rem;
 }
 .app-header h1 {
-    font-size: 1.8rem;
+    font-size: 1.5rem;
     margin: 0;
     color: #f3f4f6 !important;
 }
 
-/* Chat Messages Area - 80% width, 60% height, centered, lighter than background */
+/* Chat Messages Area - Full width in column, optimized height */
 .chat-messages {
-    width: 80%;
-    max-width: 80%;
-    height: 60vh;
-    margin: 0 auto 1rem auto;
+    width: 100%;
+    max-width: 100%;
+    height: calc(100vh - 200px);
+    margin: 0 auto 0.5rem auto;
     overflow-y: auto;
     padding: 1rem;
     border: 1px solid #3a3a3a;
@@ -176,23 +178,23 @@ footer {
 /* Input Area Styling */
 .stTextInput {
     height: auto !important;
-    min-height: 56px !important;
+    min-height: 48px !important;
 }
 
 .stTextInput > div {
     height: auto !important;
-    min-height: 56px !important;
+    min-height: 48px !important;
 }
 
 .stTextInput input {
     background-color: #2a2a2a !important;
     color: #f3f4f6 !important;
     border: 1px solid #3a3a3a !important;
-    border-radius: 26px !important;
-    height: 56px !important;
-    font-size: 0.95rem !important;
-    padding-left: 20px !important;
-    padding-right: 20px !important;
+    border-radius: 24px !important;
+    height: 48px !important;
+    font-size: 0.9rem !important;
+    padding-left: 18px !important;
+    padding-right: 18px !important;
     box-sizing: border-box !important;
 }
 
@@ -206,13 +208,13 @@ footer {
 
 /* Add spacing between chat and input */
 [data-testid="column"]:has(.stTextInput) {
-    margin-top: 1rem !important;
+    margin-top: 0.25rem !important;
 }
 
 /* Send button styling - circular, aligned with input */
 /* Remove the element-container wrapper around button */
 [data-testid="column"]:has(.stButton) .element-container {
-    height: 56px !important;
+    height: 48px !important;
     display: flex !important;
     align-items: center !important;
     margin: 0 !important;
@@ -237,12 +239,12 @@ footer {
     background-color: #2563eb !important;
     border: none !important;
     color: white !important;
-    font-size: 1.1rem !important;
+    font-size: 1rem !important;
     padding: 0 !important;
     margin: 0 !important;
-    min-width: 42px !important;
-    height: 42px !important;
-    width: 42px !important;
+    min-width: 38px !important;
+    height: 38px !important;
+    width: 38px !important;
     border-radius: 50% !important;
     display: flex !important;
     align-items: center !important;
@@ -261,9 +263,9 @@ footer {
     opacity: 0.5 !important;
 }
 
-/* Scale down all fonts by 10% */
+/* Optimize font sizes for compact layout */
 html {
-    font-size: 90%;
+    font-size: 95%;
 }
 
 /* Customize scrollbar */
@@ -279,6 +281,31 @@ html {
 }
 .chat-messages::-webkit-scrollbar-thumb:hover {
     background: #5a5a5a;
+}
+
+/* Spinner/Status Messages - Compact styling, positioned higher */
+.stSpinner > div {
+    text-align: center;
+    padding: 0 !important;
+    margin: 0 !important;
+    margin-top: -0.5rem !important;
+}
+.stSpinner > div > div {
+    font-size: 0.85rem !important;
+    line-height: 1.2 !important;
+}
+
+/* Prevent spinner container from adding extra height */
+[data-testid="stSpinner"] {
+    min-height: auto !important;
+    padding: 0 !important;
+    margin: 0 !important;
+}
+
+/* Position spinner area more compactly */
+.element-container:has([data-testid="stSpinner"]) {
+    margin-top: -0.25rem !important;
+    margin-bottom: 0 !important;
 }
 </style>
 """, unsafe_allow_html=True)
@@ -298,6 +325,8 @@ if 'processing' not in st.session_state:
     st.session_state.processing = False
 if 'current_query' not in st.session_state:
     st.session_state.current_query = None
+if 'last_status_update' not in st.session_state:
+    st.session_state.last_status_update = time.time()
 
 # Render chat interface - COMPLETELY REBUILT for proper HTML rendering
 def render_chat():
@@ -378,14 +407,75 @@ def render_chat():
 # Header area (top-left, light color)
 st.markdown('<div class="app-header"><h1>🗓️ Weekend Planner App</h1></div>', unsafe_allow_html=True)
 
-# Chat area (scrollable messages, 80% width, 60% height, centered)
-render_chat()
+# Agent Status Bar (shows pipeline progress)
+def render_agent_status_sidebar():
+    """Render vertical status panel for agent pipeline on the right side"""
+    agents = [
+        {'name': 'Chat', 'icon': '💬', 'label': 'Parse'},
+        {'name': 'Planner', 'icon': '📋', 'label': 'Plan'},
+        {'name': 'Discovery', 'icon': '🔍', 'label': 'Discover'},
+        {'name': 'Curator', 'icon': '✨', 'label': 'Curate'},
+        {'name': 'Summarizer', 'icon': '📝', 'label': 'Write'}
+    ]
+    
+    with st.container():
+        st.markdown('<p style="font-size:1rem;font-weight:600;color:#f3f4f6;margin-bottom:0.5rem;">Agent Pipeline</p>', unsafe_allow_html=True)
+        
+        # Add CSS for pulsing animation
+        st.markdown(
+            """
+            <style>
+            @keyframes pulse {
+                0%, 100% { opacity: 1; transform: scale(1); }
+                50% { opacity: 0.7; transform: scale(1.05); }
+            }
+            .pulse-active {
+                animation: pulse 1s ease-in-out infinite;
+            }
+            </style>
+            """,
+            unsafe_allow_html=True
+        )
+        
+        for agent in agents:
+            status = st.session_state.pipeline_status.get(agent['name'], 'pending')
+            
+            # Determine styling based on status
+            if status == 'completed':
+                bg_color = '#10b981'
+                label_style = 'color: #10b981; font-weight: bold;'
+                animation_class = ''
+            elif status == 'active':
+                bg_color = '#3b82f6'
+                label_style = 'color: #3b82f6; font-weight: bold;'
+                animation_class = 'pulse-active'
+            else:  # pending
+                bg_color = '#4b5563'
+                label_style = 'color: #9ca3af;'
+                animation_class = ''
+            
+            st.markdown(
+                f'<div style="display:flex;align-items:center;gap:0.75rem;padding:0.75rem 0.5rem;margin:0.25rem 0;border-radius:8px;background:rgba(255,255,255,0.02);" class="{animation_class}">'
+                f'<div style="width:32px;height:32px;border-radius:50%;background:{bg_color};display:flex;align-items:center;justify-content:center;font-size:1rem;">{agent["icon"]}</div>'
+                f'<span style="{label_style};font-size:0.9rem;">{agent["label"]}</span>'
+                f'</div>',
+                unsafe_allow_html=True
+            )
 
-# Input area (80% width, centered, with button inside)
-# Create centered container using columns
-left_spacer, input_area, right_spacer = st.columns([0.1, 0.8, 0.1])
+# Main layout with sidebar for agent status
+col_status, col_main = st.columns([0.15, 0.85])
 
-with input_area:
+with col_status:
+    # Agent status sidebar (always visible)
+    status_placeholder = st.empty()
+    with status_placeholder.container():
+        render_agent_status_sidebar()
+
+with col_main:
+    # Chat area (scrollable messages)
+    render_chat()
+    
+    # Input area (centered, with button inside)
     input_col, button_col = st.columns([20, 1], gap="small")
     with input_col:
         user_input = st.text_input(
@@ -408,36 +498,36 @@ if send_button and user_input.strip():
 
 # Process agent pipeline
 if st.session_state.processing and st.session_state.current_query:
+    
+    def update_status(agent_name, status):
+        """Update agent status"""
+        st.session_state.pipeline_status[agent_name] = status
+    
     try:
         # Chat Agent
-        st.session_state.pipeline_status['Chat'] = 'active'
-        with st.spinner("🤖 Parsing your request..."):
-            parsed_input = parse_user_input(st.session_state.current_query)
-        st.session_state.pipeline_status['Chat'] = 'completed'
+        update_status('Chat', 'active')
+        parsed_input = parse_user_input(st.session_state.current_query)
+        update_status('Chat', 'completed')
         
         # Planner Agent
-        st.session_state.pipeline_status['Planner'] = 'active'
-        with st.spinner("📋 Planning search strategy..."):
-            search_strategy = plan_search_strategy(parsed_input)
-        st.session_state.pipeline_status['Planner'] = 'completed'
+        update_status('Planner', 'active')
+        search_strategy = plan_search_strategy(parsed_input)
+        update_status('Planner', 'completed')
         
         # Discovery Agent
-        st.session_state.pipeline_status['Discovery'] = 'active'
-        with st.spinner("🔍 Discovering activities..."):
-            activities = discover_activities(parsed_input, search_strategy)
-        st.session_state.pipeline_status['Discovery'] = 'completed'
+        update_status('Discovery', 'active')
+        activities = discover_activities(parsed_input, search_strategy)
+        update_status('Discovery', 'completed')
         
         # Curator Agent
-        st.session_state.pipeline_status['Curator'] = 'active'
-        with st.spinner("✨ Curating top recommendations..."):
-            curated = curate_activities(activities, parsed_input)
-        st.session_state.pipeline_status['Curator'] = 'completed'
+        update_status('Curator', 'active')
+        curated = curate_activities(activities, parsed_input)
+        update_status('Curator', 'completed')
         
         # Summarizer Agent
-        st.session_state.pipeline_status['Summarizer'] = 'active'
-        with st.spinner("📝 Generating itinerary..."):
-            itinerary = generate_itinerary(curated, parsed_input)
-        st.session_state.pipeline_status['Summarizer'] = 'completed'
+        update_status('Summarizer', 'active')
+        itinerary = generate_itinerary(curated, parsed_input)
+        update_status('Summarizer', 'completed')
         
         # Add assistant response
         st.session_state.messages.append({'role': 'assistant', 'content': itinerary})
