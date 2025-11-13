@@ -39,3 +39,11 @@ Thumbs.db
 
 # Logs
 *.log
+
+# Platform-specific scripts
+*.bat
+*.ps1
+
+# Documentation drafts
+*_DRAFT.md
+*.tmp
