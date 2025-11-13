@@ -141,13 +141,36 @@ footer {
     margin-bottom: 0.5rem;
 }
 
-/* Format list items in chat bubbles */
-.chat-bubble ul, .chat-bubble ol {
-    margin: 0.5rem 0;
-    padding-left: 1.5rem;
+/* Format list items in chat bubbles - CRITICAL for bullet rendering */
+.chat-bubble ul {
+    margin: 8px 0 !important;
+    padding-left: 20px !important;
+    list-style-type: disc !important;
+    list-style-position: outside !important;
+    display: block !important;
+}
+.chat-bubble ol {
+    margin: 8px 0 !important;
+    padding-left: 20px !important;
+    list-style-type: decimal !important;
+    list-style-position: outside !important;
+    display: block !important;
 }
 .chat-bubble li {
-    margin: 0.25rem 0;
+    margin: 4px 0 !important;
+    line-height: 1.5 !important;
+    display: list-item !important;
+}
+.chat-bubble p {
+    margin: 5px 0;
+    line-height: 1.6;
+}
+.chat-bubble div {
+    margin: 2px 0;
+}
+.chat-bubble b, .chat-bubble strong {
+    font-weight: 600;
+    color: inherit;
 }
 
 /* Input Area Styling */
@@ -276,59 +299,81 @@ if 'processing' not in st.session_state:
 if 'current_query' not in st.session_state:
     st.session_state.current_query = None
 
-# Render chat interface with dynamic bubble widths
+# Render chat interface - COMPLETELY REBUILT for proper HTML rendering
 def render_chat():
     import re
     
-    chat_html = '<div class="chat-messages">'
-    
-    for message in st.session_state.messages:
-        bubble_class = 'user-bubble' if message['role'] == 'user' else 'agent-bubble'
-        content = message["content"]
+    def markdown_to_html(text):
+        """
+        Convert markdown to HTML.
+        Key insight: Streamlit's markdown with unsafe_allow_html=True will render HTML,
+        but we must ensure the HTML is valid and complete.
+        """
+        # Convert **bold** first (before line processing)
+        text = re.sub(r'\*\*([^\*]+?)\*\*', r'<b>\1</b>', text)
         
-        if message['role'] == 'assistant':
-            # Convert markdown-style formatting for agent messages
-            # Convert **bold** to <strong>
-            content = re.sub(r'\*\*(.+?)\*\*', r'<strong>\1</strong>', content)
+        lines = text.split('\n')
+        html_lines = []
+        in_ul = False
+        
+        for line in lines:
+            stripped = line.strip()
             
-            # Convert bullet points to HTML list
-            lines = content.split('\n')
-            formatted_lines = []
-            in_list = False
+            if not stripped:
+                # Empty line
+                if in_ul:
+                    html_lines.append('</ul>')
+                    in_ul = False
+                html_lines.append('<br/>')
+                continue
             
-            for line in lines:
-                stripped = line.strip()
-                # Check if line starts with * followed by space (bullet point)
-                if stripped.startswith('*   ') or stripped.startswith('* '):
-                    if not in_list:
-                        formatted_lines.append('<ul>')
-                        in_list = True
-                    # Remove the * and create list item
-                    list_content = re.sub(r'^\*\s+', '', stripped)
-                    formatted_lines.append(f'<li>{list_content}</li>')
-                else:
-                    if in_list:
-                        formatted_lines.append('</ul>')
-                        in_list = False
-                    if stripped:  # Only add non-empty lines
-                        formatted_lines.append(line)
-            
-            if in_list:
-                formatted_lines.append('</ul>')
-            
-            content = '<br>'.join(formatted_lines)
+            # Check for bullet: * or - followed by space
+            if re.match(r'^[\*\-]\s', stripped):
+                if not in_ul:
+                    html_lines.append('<ul style="margin:8px 0;padding-left:20px;list-style-type:disc;">')
+                    in_ul = True
+                # Remove bullet marker
+                item_text = re.sub(r'^[\*\-]\s+', '', stripped)
+                html_lines.append(f'<li style="margin:4px 0;">{item_text}</li>')
+            else:
+                # Regular text
+                if in_ul:
+                    html_lines.append('</ul>')
+                    in_ul = False
+                html_lines.append(f'<div style="margin:4px 0;">{stripped}</div>')
+        
+        if in_ul:
+            html_lines.append('</ul>')
+        
+        return '\n'.join(html_lines)
+    
+    # Build complete HTML as single string
+    html_output = '<div class="chat-messages">'
+    
+    for msg in st.session_state.messages:
+        role = msg['role']
+        content = msg['content']
+        bubble_class = 'user-bubble' if role == 'user' else 'agent-bubble'
+        
+        if role == 'assistant':
+            # Convert markdown to HTML
+            processed_content = markdown_to_html(content)
         else:
-            # For user messages, just replace newlines
-            content = content.replace("\n", "<br>")
+            # User message - simple line break conversion
+            processed_content = content.replace('\n', '<br/>')
         
-        chat_html += f'''
-            <div class="chat-container">
-                <div class="chat-bubble {bubble_class}">{content}</div>
-            </div>
-        '''
+        html_output += f'''
+<div class="chat-container">
+    <div class="chat-bubble {bubble_class}">
+        {processed_content}
+    </div>
+</div>
+'''
     
-    chat_html += '</div>'
-    st.markdown(chat_html, unsafe_allow_html=True)
+    html_output += '</div>'
+    
+    # Render as single HTML block
+    st.markdown(html_output, unsafe_allow_html=True)
 
 # Header area (top-left, light color)
 st.markdown('<div class="app-header"><h1>🗓️ Weekend Planner App</h1></div>', unsafe_allow_html=True)
