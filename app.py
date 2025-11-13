@@ -115,14 +115,15 @@ footer {
 
 /* Chat Bubbles - Dynamic width */
 .chat-bubble {
-    padding: 0.75rem 1rem;
+    padding: 0.5rem 0.75rem;
     border-radius: 12px;
-    margin-bottom: 0.75rem;
+    margin-bottom: 0.6rem;
     display: inline-block;
     max-width: 85%;
     word-wrap: break-word;
     white-space: normal;
-    line-height: 1.6;
+    line-height: 1.4;
+    font-size: 0.85rem;
 }
 .user-bubble {
     background-color: #2563eb !important;
@@ -130,6 +131,8 @@ footer {
     float: right;
     clear: both;
     white-space: pre-wrap;
+    max-width: 60% !important;
+    width: auto !important;
 }
 .agent-bubble {
     background-color: #3a3a3a !important;
@@ -159,16 +162,19 @@ footer {
     display: block !important;
 }
 .chat-bubble li {
-    margin: 4px 0 !important;
-    line-height: 1.5 !important;
+    margin: 3px 0 !important;
+    line-height: 1.4 !important;
     display: list-item !important;
+    font-size: 0.85rem;
 }
 .chat-bubble p {
-    margin: 5px 0;
-    line-height: 1.6;
+    margin: 4px 0;
+    line-height: 1.4;
+    font-size: 0.85rem;
 }
 .chat-bubble div {
     margin: 2px 0;
+    font-size: 0.85rem;
 }
 .chat-bubble b, .chat-bubble strong {
     font-weight: 600;
@@ -466,7 +472,7 @@ def render_agent_status_sidebar():
 col_status, col_main = st.columns([0.15, 0.85])
 
 with col_status:
-    # Agent status sidebar (always visible)
+    # Agent status sidebar (dynamically updated during processing)
     status_placeholder = st.empty()
     with status_placeholder.container():
         render_agent_status_sidebar()
@@ -496,38 +502,49 @@ if send_button and user_input.strip():
     st.session_state.processing = True
     st.rerun()
 
-# Process agent pipeline
+# Execute agent pipeline
 if st.session_state.processing and st.session_state.current_query:
     
-    def update_status(agent_name, status):
-        """Update agent status"""
-        st.session_state.pipeline_status[agent_name] = status
+    def update_pipeline_display():
+        """Refresh the pipeline sidebar display"""
+        with status_placeholder.container():
+            render_agent_status_sidebar()
     
     try:
         # Chat Agent
-        update_status('Chat', 'active')
+        st.session_state.pipeline_status['Chat'] = 'active'
+        update_pipeline_display()
         parsed_input = parse_user_input(st.session_state.current_query)
-        update_status('Chat', 'completed')
+        st.session_state.pipeline_status['Chat'] = 'completed'
+        update_pipeline_display()
         
         # Planner Agent
-        update_status('Planner', 'active')
+        st.session_state.pipeline_status['Planner'] = 'active'
+        update_pipeline_display()
         search_strategy = plan_search_strategy(parsed_input)
-        update_status('Planner', 'completed')
+        st.session_state.pipeline_status['Planner'] = 'completed'
+        update_pipeline_display()
         
         # Discovery Agent
-        update_status('Discovery', 'active')
+        st.session_state.pipeline_status['Discovery'] = 'active'
+        update_pipeline_display()
         activities = discover_activities(parsed_input, search_strategy)
-        update_status('Discovery', 'completed')
+        st.session_state.pipeline_status['Discovery'] = 'completed'
+        update_pipeline_display()
         
         # Curator Agent
-        update_status('Curator', 'active')
+        st.session_state.pipeline_status['Curator'] = 'active'
+        update_pipeline_display()
         curated = curate_activities(activities, parsed_input)
-        update_status('Curator', 'completed')
+        st.session_state.pipeline_status['Curator'] = 'completed'
+        update_pipeline_display()
         
         # Summarizer Agent
-        update_status('Summarizer', 'active')
+        st.session_state.pipeline_status['Summarizer'] = 'active'
+        update_pipeline_display()
         itinerary = generate_itinerary(curated, parsed_input)
-        update_status('Summarizer', 'completed')
+        st.session_state.pipeline_status['Summarizer'] = 'completed'
+        update_pipeline_display()
         
         # Add assistant response
         st.session_state.messages.append({'role': 'assistant', 'content': itinerary})
