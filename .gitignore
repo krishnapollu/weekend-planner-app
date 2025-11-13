@@ -47,3 +47,6 @@ Thumbs.db
 # Documentation drafts
 *_DRAFT.md
 *.tmp
+
+# Archived old agent files
+agents/archive/

@@ -1,0 +1,188 @@
+# Task Prompts Configuration
+# Define all task descriptions and expected outputs
+
+tasks:
+  chat_task:
+    description: |
+      Analyze the following user input and extract structured information:
+      
+      User Input: "{user_input}"
+      
+      Extract the following information:
+      1. Date/Time: When does the user want to do these activities? (e.g., "Saturday", "this weekend", "tomorrow")
+      2. Location: Where is the user looking for activities? (EXACT city name mentioned by user)
+      3. Interests: What types of activities is the user interested in? 
+         Choose from: dinner, restaurant, outdoor, movie, event, entertainment
+      4. Additional context: Any specific preferences mentioned (budget, mood, group size, etc.)
+      
+      CRITICAL FOR LOCATION:
+      - Extract the EXACT city name mentioned by the user
+      - Do NOT default to New York or any other city if not mentioned
+      - Examples: "Austin" from "Austin, Texas", "Atlanta" from "in Atlanta", "Seattle" from "near Seattle"
+      - If truly no location mentioned, use "not specified"
+      
+      IMPORTANT: Return ONLY a valid JSON object with this exact structure:
+      {{
+          "date": "extracted date or 'not specified'",
+          "location": "EXACT city name from user input or 'not specified'",
+          "interests": ["list", "of", "interests"],
+          "context": "any additional relevant information"
+      }}
+      
+      Do not include any explanation, markdown formatting, or additional text.
+    expected_output: "A JSON object with date, location, interests, and context fields"
+
+  planner_task:
+    description: |
+      Based on the user's structured request, create a search strategy for activities.
+      
+      User Request:
+      - Date: {date}
+      - Location: {location}
+      - Interests: {interests}
+      - Context: {context}
+      
+      Analyze this information and decide which activity categories should be searched.
+      Available categories:
+      - restaurants: For dining experiences
+      - movies: For film entertainment
+      - events: For local events, concerts, festivals
+      - outdoor: For parks, trails, outdoor activities
+      
+      Consider:
+      1. What categories match the user's stated interests?
+      2. What categories would create a balanced day/evening?
+      3. What makes sense for the time of day/week mentioned?
+      4. Should we prioritize certain categories?
+      
+      Return ONLY a valid JSON object with this structure:
+      {{
+          "categories": ["category1", "category2", ...],
+          "priority": "which category to emphasize (optional)",
+          "reasoning": "brief explanation of strategy"
+      }}
+      
+      Do not include markdown formatting or additional text.
+    expected_output: "A JSON object with categories, priority, and reasoning"
+
+  discovery_task:
+    description: |
+      Based on your knowledge, recommend realistic activities for {location} on {date}.
+      
+      User interests: {interests}
+      Categories to search: {categories}
+      
+      For each category, suggest 3-5 REAL places/activities that actually exist:
+      
+      - RESTAURANTS: Popular local restaurants with real names (not generic like "Restaurant #1")
+      - MOVIES: Current or recent movies showing in theaters (2024-2025)
+      - OUTDOOR: Parks, trails, landmarks that exist in {location}
+      - EVENTS: Seasonal events, festivals, or activities typical for {location} in {date}
+      
+      For EACH activity provide:
+      - name: Real, specific name (e.g., "Eiffel Tower", "Louvre Museum", "Le Cinq Restaurant")
+      - type: One of [restaurant, movie, outdoor, event]
+      - rating: Realistic rating 3.5-5.0 stars
+      - details: Brief description (cuisine type, movie genre, activity description)
+      
+      IMPORTANT: Use your knowledge of {location}. Suggest places tourists actually visit or locals actually recommend.
+      Do NOT make up generic names. Think about what you know about {location}.
+      
+      Return ONLY a valid JSON array. Example format:
+      [
+        {{"name": "Louvre Museum", "type": "outdoor", "rating": 4.8, "details": "World's largest art museum with iconic glass pyramid"}},
+        {{"name": "Le Jules Verne", "type": "restaurant", "rating": 4.6, "details": "Michelin-starred French cuisine in the Eiffel Tower"}},
+        {{"name": "Dune: Part Two", "type": "movie", "rating": 4.7, "details": "Epic sci-fi sequel continuing Paul Atreides' journey"}}
+      ]
+    expected_output: "JSON array of activity objects with name, type, rating, and details"
+
+  curator_task:
+    description: |
+      Review the following discovered activities and select the TOP 3-5 best options
+      for the user's itinerary.
+      
+      LOCATION: {location}
+      User Interests: {interests}
+      Context: {context}
+      
+      Discovered Activities:
+      {activities_json}
+      
+      CRITICAL: Verify ALL selected activities (except movies) are actually located in {location}.
+      If any activity appears to be from a different city, DO NOT select it.
+      
+      Evaluation criteria:
+      1. LOCATION ACCURACY - Must be in {location} (except movies)
+      2. Match with user interests
+      3. Rating/quality (prioritize 4+ stars)
+      4. Variety (don't pick all the same type)
+      5. Logical flow (activities that work well together)
+      6. Weather considerations if available
+      
+      Return ONLY a JSON object with this structure:
+      {{
+          "selected": [
+              {{
+                  "name": "activity name",
+                  "type": "activity type",
+                  "rating": rating,
+                  "details": "description",
+                  "reason": "why this was selected"
+              }}
+          ],
+          "curation_notes": "brief explanation of selections"
+      }}
+      
+      Do not include markdown formatting.
+    expected_output: "A JSON object with selected activities and curation notes"
+
+  summarizer_task:
+    description: |
+      Create a friendly, engaging itinerary based on these curated activities.
+      
+      Location: {location}
+      Date: {date}
+      
+      Curated Activities:
+      {curated_json}
+      
+      Curation Notes: {curation_notes}
+      
+      Write a natural, conversational itinerary that includes:
+      1. A welcoming introduction
+      2. Each activity with:
+         - Name and type (use emojis!)
+         - Rating if available
+         - Brief description
+         - Why it's a great choice
+      3. A friendly closing with any final tips
+      
+      Tone: Warm, enthusiastic, helpful
+      Length: 200-300 words
+      Format: Use bullet points or numbered list
+      
+      Do NOT return JSON. Return a friendly text itinerary ready to present to the user.
+    expected_output: "A natural language itinerary with emojis and friendly formatting"
+
+# Activity categories configuration
+categories:
+  available:
+    - restaurants
+    - movies
+    - events
+    - outdoor
+  
+  interest_mapping:
+    dinner: [restaurants]
+    restaurant: [restaurants]
+    food: [restaurants]
+    movie: [movies]
+    film: [movies]
+    cinema: [movies]
+    event: [events]
+    concert: [events]
+    festival: [events]
+    outdoor: [outdoor]
+    park: [outdoor]
+    nature: [outdoor]
+    hiking: [outdoor]

@@ -37,12 +37,8 @@ def patched_client_init(self, *args, **kwargs):
 
 httpx.Client.__init__ = patched_client_init
 
-# Import agent functions AFTER SSL setup
-from agents.chat_agent import parse_user_input
-from agents.planner_agent import plan_search_strategy
-from agents.discovery_agent import discover_activities
-from agents.curator_agent import curate_activities
-from agents.summarizer_agent import generate_itinerary
+# Import crew AFTER SSL setup
+from crew import WeekendPlannerCrew
 
 # Page configuration
 st.set_page_config(
@@ -502,7 +498,7 @@ if send_button and user_input.strip():
     st.session_state.processing = True
     st.rerun()
 
-# Execute agent pipeline
+# Execute agent pipeline using CrewAI
 if st.session_state.processing and st.session_state.current_query:
     
     def update_pipeline_display():
@@ -510,41 +506,46 @@ if st.session_state.processing and st.session_state.current_query:
         with status_placeholder.container():
             render_agent_status_sidebar()
     
+    def simulate_progress():
+        """Simulate agent progress during crew execution"""
+        import time
+        agent_sequence = ['Chat', 'Planner', 'Discovery', 'Curator', 'Summarizer']
+        
+        for agent_name in agent_sequence:
+            st.session_state.pipeline_status[agent_name] = 'active'
+            update_pipeline_display()
+            time.sleep(0.5)  # Brief pause to show active state
+            
+            # Agent is now processing (crew handles actual execution)
+            # We just update UI to show progress
+            
+            st.session_state.pipeline_status[agent_name] = 'completed'
+            update_pipeline_display()
+    
     try:
-        # Chat Agent
-        st.session_state.pipeline_status['Chat'] = 'active'
-        update_pipeline_display()
-        parsed_input = parse_user_input(st.session_state.current_query)
-        st.session_state.pipeline_status['Chat'] = 'completed'
+        # Initialize the crew
+        planner_crew = WeekendPlannerCrew()
+        
+        # Start progress simulation in background (for UI updates)
+        import threading
+        progress_thread = threading.Thread(target=simulate_progress, daemon=True)
+        progress_thread.start()
+        
+        # Execute the crew (this runs all agents sequentially)
+        result = planner_crew.crew().kickoff(
+            inputs={'user_input': st.session_state.current_query}
+        )
+        
+        # Wait for progress thread to finish
+        progress_thread.join(timeout=1)
+        
+        # Ensure all agents show as completed
+        for agent_name in st.session_state.pipeline_status.keys():
+            st.session_state.pipeline_status[agent_name] = 'completed'
         update_pipeline_display()
         
-        # Planner Agent
-        st.session_state.pipeline_status['Planner'] = 'active'
-        update_pipeline_display()
-        search_strategy = plan_search_strategy(parsed_input)
-        st.session_state.pipeline_status['Planner'] = 'completed'
-        update_pipeline_display()
-        
-        # Discovery Agent
-        st.session_state.pipeline_status['Discovery'] = 'active'
-        update_pipeline_display()
-        activities = discover_activities(parsed_input, search_strategy)
-        st.session_state.pipeline_status['Discovery'] = 'completed'
-        update_pipeline_display()
-        
-        # Curator Agent
-        st.session_state.pipeline_status['Curator'] = 'active'
-        update_pipeline_display()
-        curated = curate_activities(activities, parsed_input)
-        st.session_state.pipeline_status['Curator'] = 'completed'
-        update_pipeline_display()
-        
-        # Summarizer Agent
-        st.session_state.pipeline_status['Summarizer'] = 'active'
-        update_pipeline_display()
-        itinerary = generate_itinerary(curated, parsed_input)
-        st.session_state.pipeline_status['Summarizer'] = 'completed'
-        update_pipeline_display()
+        # Extract itinerary from result
+        itinerary = str(result)
         
         # Add assistant response
         st.session_state.messages.append({'role': 'assistant', 'content': itinerary})
@@ -557,6 +558,11 @@ if st.session_state.processing and st.session_state.current_query:
         
     except Exception as e:
         st.error(f"❌ Error: {str(e)}")
-        st.session_state.pipeline_status[list(st.session_state.pipeline_status.keys())[0]] = 'error'
+        # Mark first pending agent as error
+        for agent_name, status in st.session_state.pipeline_status.items():
+            if status != 'completed':
+                st.session_state.pipeline_status[agent_name] = 'error'
+                break
+        update_pipeline_display()
         st.session_state.processing = False
         st.session_state.current_query = None
