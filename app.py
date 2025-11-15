@@ -506,63 +506,115 @@ if st.session_state.processing and st.session_state.current_query:
         with status_placeholder.container():
             render_agent_status_sidebar()
     
-    def simulate_progress():
-        """Simulate agent progress during crew execution"""
+    try:
         import time
         agent_sequence = ['Chat', 'Planner', 'Discovery', 'Curator', 'Summarizer']
         
-        for agent_name in agent_sequence:
-            st.session_state.pipeline_status[agent_name] = 'active'
-            update_pipeline_display()
-            time.sleep(0.5)  # Brief pause to show active state
-            
-            # Agent is now processing (crew handles actual execution)
-            # We just update UI to show progress
-            
-            st.session_state.pipeline_status[agent_name] = 'completed'
-            update_pipeline_display()
-    
-    try:
-        # Initialize the crew
+        # Initialize crew
         planner_crew = WeekendPlannerCrew()
+        crew_instance = planner_crew.crew()
         
-        # Start progress simulation in background (for UI updates)
+        # Create a container to show progress and result
+        progress_container = st.empty()
+        
+        # Run crew synchronously with simulated visual progress
+        result = None
+        error = None
+        
+        # Capture query value before threading (session_state not accessible in thread)
+        user_query = st.session_state.current_query
+        
+        # Simulate agent progress while crew executes
         import threading
-        progress_thread = threading.Thread(target=simulate_progress, daemon=True)
-        progress_thread.start()
         
-        # Execute the crew (this runs all agents sequentially)
-        result = planner_crew.crew().kickoff(
-            inputs={'user_input': st.session_state.current_query}
-        )
+        crew_done = {'flag': False, 'result': None, 'error': None}
         
-        # Wait for progress thread to finish
-        progress_thread.join(timeout=1)
+        def run_crew_background():
+            try:
+                print(f"\n{'='*60}")
+                print(f"🚀 Starting crew execution...")
+                print(f"Query: {user_query}")
+                print(f"{'='*60}\n")
+                
+                r = crew_instance.kickoff(inputs={'user_input': user_query})
+                
+                print(f"\n{'='*60}")
+                print(f"✅ Crew execution completed!")
+                print(f"Result type: {type(r)}")
+                print(f"Result: {str(r)[:200]}...")
+                print(f"{'='*60}\n")
+                
+                crew_done['result'] = str(r)
+            except Exception as e:
+                print(f"\n{'='*60}")
+                print(f"❌ Crew execution error: {str(e)}")
+                print(f"{'='*60}\n")
+                import traceback
+                traceback.print_exc()
+                crew_done['error'] = str(e)
+            finally:
+                crew_done['flag'] = True
         
-        # Ensure all agents show as completed
-        for agent_name in st.session_state.pipeline_status.keys():
-            st.session_state.pipeline_status[agent_name] = 'completed'
+        # Start background execution
+        thread = threading.Thread(target=run_crew_background, daemon=True)
+        thread.start()
+        
+        # Show visual progress
+        for i, agent_name in enumerate(agent_sequence):
+            if crew_done['flag']:
+                break
+                
+            # Update status
+            for j, name in enumerate(agent_sequence):
+                if j < i:
+                    st.session_state.pipeline_status[name] = 'completed'
+                elif j == i:
+                    st.session_state.pipeline_status[name] = 'active'
+                else:
+                    st.session_state.pipeline_status[name] = 'pending'
+            
+            update_pipeline_display()
+            time.sleep(5 if agent_name == 'Discovery' else 3)
+        
+        # Wait for completion
+        thread.join(timeout=30)
+        
+        # Mark all completed
+        for name in agent_sequence:
+            st.session_state.pipeline_status[name] = 'completed'
         update_pipeline_display()
         
-        # Extract itinerary from result
-        itinerary = str(result)
+        # Display result
+        print(f"\n📊 Result Status:")
+        print(f"  - crew_done['flag']: {crew_done['flag']}")
+        print(f"  - crew_done['error']: {crew_done['error']}")
+        print(f"  - crew_done['result'] exists: {bool(crew_done['result'])}")
+        if crew_done['result']:
+            print(f"  - Result length: {len(crew_done['result'])} chars")
         
-        # Add assistant response
-        st.session_state.messages.append({'role': 'assistant', 'content': itinerary})
+        if crew_done['error']:
+            print(f"❌ Displaying error to user")
+            st.error(f"❌ Error: {crew_done['error']}")
+        elif crew_done['result']:
+            print(f"✅ Adding result to messages")
+            # Add to messages
+            st.session_state.messages.append({
+                'role': 'assistant', 
+                'content': crew_done['result']
+            })
+        else:
+            print(f"⚠️ No result received")
+            st.error("❌ No result received from crew")
         
-        # Reset state
+        # Reset processing state
         st.session_state.processing = False
         st.session_state.current_query = None
-        st.session_state.pipeline_status = {k: 'pending' for k in st.session_state.pipeline_status}
+        st.session_state.pipeline_status = {k: 'pending' for k in agent_sequence}
         st.rerun()
         
     except Exception as e:
         st.error(f"❌ Error: {str(e)}")
-        # Mark first pending agent as error
-        for agent_name, status in st.session_state.pipeline_status.items():
-            if status != 'completed':
-                st.session_state.pipeline_status[agent_name] = 'error'
-                break
-        update_pipeline_display()
         st.session_state.processing = False
         st.session_state.current_query = None
+        st.session_state.pipeline_status = {k: 'pending' for k in st.session_state.pipeline_status}
+        st.rerun()

@@ -50,14 +50,20 @@ class WeekendPlannerCrew:
     Uses 5 specialized agents to create personalized weekend itineraries.
     """
     
-    def __init__(self):
-        """Initialize LLM for all agents"""
+    def __init__(self, step_callback=None):
+        """Initialize LLM for all agents
+        
+        Args:
+            step_callback: Optional callback function(agent_name: str, status: str) 
+                          Called when agent starts/completes. status: 'active' or 'completed'
+        """
         if os.getenv('GOOGLE_API_KEY'):
             self.llm = LLM(model="gemini-2.0-flash")
         elif os.getenv('OPENAI_API_KEY'):
             self.llm = LLM(model="gpt-4-turbo-preview", api_key=os.getenv('OPENAI_API_KEY'))
         else:
             raise ValueError("No LLM API key found. Set GOOGLE_API_KEY or OPENAI_API_KEY")
+        self.step_callback = step_callback
     
     # ========================
     # AGENTS
@@ -134,8 +140,8 @@ class WeekendPlannerCrew:
     
     @task
     def parse_task(self) -> Task:
-        """Parse user input and extract structured information"""
-        description = config.get_task_description('chat_task', user_input="{user_input}")
+        """Parse and structure user input"""
+        description = config.get_task_description('chat_task', user_input='{user_input}')
         expected_output = config.get_task_expected_output('chat_task')
         
         return Task(
