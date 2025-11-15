@@ -98,6 +98,8 @@ class WeekendPlannerCrew:
     @agent
     def discovery_agent(self) -> Agent:
         """Local Activity Expert - Generates realistic recommendations"""
+        from tools.crewai_tools import enrich_venues_with_addresses
+        
         agent_config = config.get_agent_config('discovery_agent')
         return Agent(
             role=agent_config['role'],
@@ -105,7 +107,8 @@ class WeekendPlannerCrew:
             backstory=agent_config['backstory'],
             llm=self.llm,
             verbose=agent_config.get('verbose', True),
-            allow_delegation=agent_config.get('allow_delegation', False)
+            allow_delegation=agent_config.get('allow_delegation', False),
+            tools=[enrich_venues_with_addresses]
         )
     
     @agent
@@ -132,6 +135,22 @@ class WeekendPlannerCrew:
             llm=self.llm,
             verbose=agent_config.get('verbose', True),
             allow_delegation=agent_config.get('allow_delegation', False)
+        )
+    
+    @agent
+    def budget_agent(self) -> Agent:
+        """Budget Analyst - Calculates costs and provides budget breakdown"""
+        from tools.crewai_tools import calculate_itinerary_budget
+        
+        agent_config = config.get_agent_config('budget_agent')
+        return Agent(
+            role=agent_config['role'],
+            goal=agent_config['goal'],
+            backstory=agent_config['backstory'],
+            llm=self.llm,
+            verbose=agent_config.get('verbose', True),
+            allow_delegation=agent_config.get('allow_delegation', False),
+            tools=[calculate_itinerary_budget]
         )
     
     # ========================
@@ -187,11 +206,12 @@ class WeekendPlannerCrew:
     
     @task
     def discovery_task(self) -> Task:
-        """Discover activities using LLM reasoning"""
+        """Discover activities and enrich with addresses"""
         description = """
         Based on the parsed input and search strategy from previous tasks, 
-        recommend realistic activities using your knowledge.
+        recommend realistic activities using your knowledge, then enrich them with addresses.
         
+        STEP 1: Generate recommendations
         For each category in the search strategy, suggest 3-5 REAL places/activities:
         - RESTAURANTS: Popular local restaurants with real names
         - MOVIES: Current or recent movies (2024-2025)
@@ -204,9 +224,17 @@ class WeekendPlannerCrew:
         - rating: Realistic rating 3.5-5.0 stars
         - details: Brief description
         
-        CRITICAL: Ensure all recommendations are appropriate for the location mentioned.
+        STEP 2: Enrich with addresses
+        Use the enrich_venues_with_addresses tool to add address information:
+        - Pass your activities as JSON string
+        - Pass the location from parsed input
+        - The tool will add address, phone, website to each venue
         
-        Return ONLY a valid JSON array of activity objects.
+        CRITICAL: 
+        - Ensure all recommendations are appropriate for the location mentioned
+        - ALWAYS use the enrich_venues_with_addresses tool before returning
+        
+        Return the enriched JSON array with addresses included.
         """
         expected_output = config.get_task_expected_output('discovery_task')
         
@@ -230,6 +258,8 @@ class WeekendPlannerCrew:
         4. Variety (mix of types)
         5. Logical flow
         
+        IMPORTANT: Preserve the address field from the discovery results for each selected activity.
+        
         Return ONLY a JSON object with this structure:
         {
             "selected": [
@@ -238,6 +268,7 @@ class WeekendPlannerCrew:
                     "type": "activity type",
                     "rating": rating,
                     "details": "description",
+                    "address": "street address from discovery (MUST include this)",
                     "reason": "why selected"
                 }
             ],
@@ -254,23 +285,72 @@ class WeekendPlannerCrew:
         )
     
     @task
-    def summarization_task(self) -> Task:
-        """Generate friendly, engaging itinerary"""
+    def budget_task(self) -> Task:
+        """Calculate budget for curated activities"""
         description = """
-        Create a friendly, engaging itinerary based on the curated activities.
+        Calculate the estimated budget for the curated activities in local currency.
+        
+        Steps:
+        1. Take the selected activities from the curator
+        2. Extract location and group size from parsed user input (default group_size to 1 if not specified)
+        3. Use the calculate_itinerary_budget tool with:
+           - activities_json: JSON string of activities with name, type, rating, details
+           - group_size: number of people
+           - location: city name from parsed input (e.g., "Seattle", "London", "Atlanta")
+        4. Return the budget data
+        
+        The tool will provide per-activity cost information that the itinerary writer will integrate.
+        
+        IMPORTANT: Pass the location parameter to get the correct currency.
+        """
+        expected_output = "Budget data with cost per activity in local currency"
+        
+        return Task(
+            description=description,
+            expected_output=expected_output,
+            agent=self.budget_agent(),
+            context=[self.parse_task(), self.curation_task()]
+        )
+    
+    @task
+    def summarization_task(self) -> Task:
+        """Generate friendly, engaging itinerary with inline budget"""
+        description = """
+        Create a friendly, engaging itinerary based on the curated activities with costs shown inline.
         
         Write a natural, conversational summary that includes:
         1. A welcoming introduction
-        2. Each activity with:
-           - Name and type (use emojis!)
-           - Rating if available
-           - Brief description
-           - Why it's a great choice
-        3. A friendly closing with tips
+        2. Each activity formatted as:
+           **[Activity Name]** [emoji] ([cost from budget])
+           - ⭐ Rating: [rating]
+           - 📍 Address: [full address] (ONLY if address field exists and is not null/empty)
+           - [Brief description]
+           - [Why it's a great choice]
+        3. Total estimated cost at the end
+        4. A friendly closing with tips
+        
+        IMPORTANT FORMATTING: 
+        - Main line: "**Pike Place Chowder** 🍜 ($40-80)"
+        - Then show details as sub-bullets:
+          - Rating bullet (always show)
+          - Address bullet: Check if 'address' field exists in activity data
+            * If address exists and is valid (not null/empty/None), show: "📍 Address: [full address]"
+            * If address is missing/null/empty, SKIP this bullet entirely - don't show any address line
+          - Description bullets
+        - Use the currency symbol from the budget task
+        - Show FREE for free activities
+        
+        CRITICAL: Only show address if the activity has a valid 'address' field with actual address data.
+        
+        Example format:
+        **Pike Place Chowder** 🍜 ($40-80)
+        - ⭐ Rating: 4.6
+        - 📍 Address: 1919 Post Alley, Seattle, WA 98101
+        - Award-winning chowder in Pike Place Market
+        - A must-try for authentic Seattle food
         
         Tone: Warm, enthusiastic, helpful
-        Length: 200-300 words
-        Format: Use bullet points or numbered list
+        Length: 250-350 words
         
         Do NOT return JSON. Return friendly text ready to present to the user.
         """
@@ -280,7 +360,7 @@ class WeekendPlannerCrew:
             description=description,
             expected_output=expected_output,
             agent=self.summarizer_agent(),
-            context=[self.parse_task(), self.curation_task()]
+            context=[self.parse_task(), self.curation_task(), self.budget_task()]
         )
     
     # ========================

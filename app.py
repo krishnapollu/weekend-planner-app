@@ -321,6 +321,7 @@ if 'pipeline_status' not in st.session_state:
         'Planner': 'pending',
         'Discovery': 'pending',
         'Curator': 'pending',
+        'Budget': 'pending',
         'Summarizer': 'pending'
     }
 if 'processing' not in st.session_state:
@@ -417,6 +418,7 @@ def render_agent_status_sidebar():
         {'name': 'Planner', 'icon': '📋', 'label': 'Plan'},
         {'name': 'Discovery', 'icon': '🔍', 'label': 'Discover'},
         {'name': 'Curator', 'icon': '✨', 'label': 'Curate'},
+        {'name': 'Budget', 'icon': '💰', 'label': 'Budget'},
         {'name': 'Summarizer', 'icon': '📝', 'label': 'Write'}
     ]
     
@@ -508,7 +510,7 @@ if st.session_state.processing and st.session_state.current_query:
     
     try:
         import time
-        agent_sequence = ['Chat', 'Planner', 'Discovery', 'Curator', 'Summarizer']
+        agent_sequence = ['Chat', 'Planner', 'Discovery', 'Curator', 'Budget', 'Summarizer']
         
         # Initialize crew
         planner_crew = WeekendPlannerCrew()
