@@ -330,6 +330,8 @@ if 'current_query' not in st.session_state:
     st.session_state.current_query = None
 if 'last_status_update' not in st.session_state:
     st.session_state.last_status_update = time.time()
+if 'input_key' not in st.session_state:
+    st.session_state.input_key = 0
 
 # Render chat interface - COMPLETELY REBUILT for proper HTML rendering
 def render_chat():
@@ -485,12 +487,12 @@ with col_main:
         user_input = st.text_input(
             "Message",
             placeholder="Ask me to plan your weekend...",
-            key="user_input",
+            key=f"user_input_{st.session_state.input_key}",
             label_visibility="collapsed",
             max_chars=500
         )
     with button_col:
-        st.markdown('<div style="margin-top: 0px;">', unsafe_allow_html=True)
+        st.markdown('<div style="margin-top: -8px;">', unsafe_allow_html=True)
         send_button = st.button("➜", disabled=st.session_state.processing, key="send_btn")
         st.markdown('</div>', unsafe_allow_html=True)
 
@@ -498,6 +500,7 @@ if send_button and user_input.strip():
     st.session_state.messages.append({'role': 'user', 'content': user_input.strip()})
     st.session_state.current_query = user_input.strip()
     st.session_state.processing = True
+    st.session_state.input_key += 1  # Change key to clear input field
     st.rerun()
 
 # Execute agent pipeline using CrewAI
@@ -578,8 +581,8 @@ if st.session_state.processing and st.session_state.current_query:
             update_pipeline_display()
             time.sleep(5 if agent_name == 'Discovery' else 3)
         
-        # Wait for completion
-        thread.join(timeout=30)
+        # Wait for completion (increased timeout for slower agents)
+        thread.join(timeout=60)
         
         # Mark all completed
         for name in agent_sequence:

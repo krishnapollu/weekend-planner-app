@@ -297,13 +297,14 @@ class WeekendPlannerCrew:
            - activities_json: JSON string of activities with name, type, rating, details
            - group_size: number of people
            - location: city name from parsed input (e.g., "Seattle", "London", "Atlanta")
-        4. Return the budget data
+        4. Return ONLY the JSON from the tool, nothing else
         
-        The tool will provide per-activity cost information that the itinerary writer will integrate.
-        
-        IMPORTANT: Pass the location parameter to get the correct currency.
+        IMPORTANT: 
+        - Pass the location parameter to get the correct currency
+        - Return ONLY the JSON output from the tool
+        - Do not add explanations or thoughts, just return the JSON
         """
-        expected_output = "Budget data with cost per activity in local currency"
+        expected_output = "JSON with budget data: {currency_symbol, currency_code, location, group_size, activities_with_costs, total_cost_display}"
         
         return Task(
             description=description,
